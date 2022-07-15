@@ -13,6 +13,7 @@ import (
 var (
 	ErrDuplicateLogin = errors.New("duplicate login")
 )
+var AnonymousUser = &User{}
 
 type User struct {
 	ID        int64     `json:"id"`
@@ -27,6 +28,10 @@ type User struct {
 type password struct {
 	plaintext *string
 	hash      []byte
+}
+
+func (u *User) IsAnonymous() bool {
+	return u == AnonymousUser
 }
 
 func ValidateLogin(v *validator.Validator, login string) {

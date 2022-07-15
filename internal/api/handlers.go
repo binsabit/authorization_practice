@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	data "github.com/binsabit/authorization_practice/internal/data/models"
 	"github.com/binsabit/authorization_practice/internal/data/validator"
@@ -112,4 +113,10 @@ func (app *application) LoginUser(w http.ResponseWriter, r *http.Request, _ http
 		return
 	}
 
+	accesssToken, err := app.models.Tokens.NewToken(*user, data.TypeAccess, time.Minute*15)
+	if err != nil {
+		helpers.ServerErrorResponse(w, r, err)
+		return
+	}
+	err = helpers.WriteJSON(w, http.StatusCreated, helpers.Envelope{"authentication": accesssToken}, nil)
 }
