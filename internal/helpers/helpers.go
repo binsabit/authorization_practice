@@ -13,7 +13,7 @@ import (
 type Envelope map[string]interface{}
 
 func ReadJSON(w http.ResponseWriter, r *http.Request, dst interface{}) error {
-	maxBytes := 1_048_576
+	maxBytes := 5_121_454
 	r.Body = http.MaxBytesReader(w, r.Body, int64(maxBytes))
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()

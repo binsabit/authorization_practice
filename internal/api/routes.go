@@ -1,12 +1,17 @@
 package api
 
-import "github.com/julienschmidt/httprouter"
+import (
+	"net/http"
 
-func (app *application) routes() *httprouter.Router {
+	"github.com/julienschmidt/httprouter"
+)
+
+func (app *application) routes() http.Handler {
 	router := httprouter.New()
 
-	router.GET("/", app.Index)
-	router.POST("/register", app.RegisterUser)
-	router.POST("/login", app.LoginUser)
+	router.HandlerFunc(http.MethodGet, "/", app.IsAuthorized(app.Index))
+	router.HandlerFunc(http.MethodPost, "/register", app.RegisterUser)
+	router.HandlerFunc(http.MethodPost, "/login", app.LoginUser)
+
 	return router
 }

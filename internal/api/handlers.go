@@ -2,20 +2,24 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
 	data "github.com/binsabit/authorization_practice/internal/data/models"
 	"github.com/binsabit/authorization_practice/internal/data/validator"
 	"github.com/binsabit/authorization_practice/internal/helpers"
-	"github.com/julienschmidt/httprouter"
 )
 
-func (app *application) Index(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-
+func (app *application) Index(w http.ResponseWriter, r *http.Request) {
+	user := app.contextGetUser(r)
+	if user.IsAnonymous() {
+		helpers.MethodNotAllowedResponse(w, r)
+	}
+	fmt.Println(user)
 }
 
-func (app *application) RegisterUser(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+func (app *application) RegisterUser(w http.ResponseWriter, r *http.Request) {
 	app.logger.Println("Registering user")
 
 	var input struct {
@@ -68,7 +72,7 @@ func (app *application) RegisterUser(w http.ResponseWriter, r *http.Request, _ h
 
 }
 
-func (app *application) LoginUser(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+func (app *application) LoginUser(w http.ResponseWriter, r *http.Request) {
 	app.logger.Println("Signing in user")
 
 	var input struct {
@@ -118,5 +122,9 @@ func (app *application) LoginUser(w http.ResponseWriter, r *http.Request, _ http
 		helpers.ServerErrorResponse(w, r, err)
 		return
 	}
+
 	err = helpers.WriteJSON(w, http.StatusCreated, helpers.Envelope{"authentication": accesssToken}, nil)
+	if err != nil {
+		helpers.ServerErrorResponse(w, r, err)
+	}
 }

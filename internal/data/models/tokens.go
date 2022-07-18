@@ -1,6 +1,8 @@
 package data
 
 import (
+	"context"
+	"crypto/sha256"
 	"database/sql"
 	"time"
 
@@ -20,8 +22,9 @@ const (
 
 type Token struct {
 	Plaintext string    `json:"token"`
+	Hash      []byte    `json:"."`
 	Scope     string    `json:"scope"`
-	ExpiresAt time.Time `json:"expires+at"`
+	ExpiresAt time.Time `json:"expires_at"`
 	UserID    int64     `json:"."`
 }
 
@@ -37,9 +40,9 @@ func generateToken(userID int64, ttd time.Duration, scope, role string) (*Token,
 	claims := t.Claims.(jwt.MapClaims)
 
 	claims["scope"] = scope
-	claims["userid"] = userID
+	claims["user_id"] = userID
 	claims["role"] = role
-	claims["exp"] = time.Now().Add(ttd)
+	claims["exp"] = time.Now().Add(ttd).Unix()
 
 	tokenString, err := t.SignedString(signKey)
 	if err != nil {
@@ -47,6 +50,9 @@ func generateToken(userID int64, ttd time.Duration, scope, role string) (*Token,
 	}
 
 	token.Plaintext = tokenString
+	hash := sha256.Sum256([]byte(token.Plaintext))
+	token.Hash = hash[:]
+
 	return token, nil
 
 }
@@ -60,10 +66,62 @@ type TokenModel struct {
 }
 
 func (m TokenModel) NewToken(user User, scope string, ttd time.Duration) (*Token, error) {
-	token, err := generateToken(user.ID, ttd, scope, user.Role)
+	accessToken, err := generateToken(user.ID, ttd, scope, user.Role)
 	if err != nil {
 		return nil, err
 	}
 
-	return token, nil
+	return accessToken, nil
+}
+
+func (m TokenModel) Insert(token *Token) error {
+	query := `
+		INSERT INTO tokens (hash, user_id, expiry, scope)
+		VALUES ($1, $2, $3, $4)`
+	args := []interface{}{token.Hash, token.UserID, token.ExpiresAt, token.Scope}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, err := m.DB.ExecContext(ctx, query, args...)
+	return err
+}
+
+func (m TokenModel) GetAllForUser(user *User) ([]*Token, error) {
+	query := `SELECT hash, user_login, expiry, scope
+			FROM tokens
+			WHERE user_id = $1 AND expiry > $2`
+
+	args := []interface{}{user.ID, time.Now()}
+
+	rows, err := m.DB.Query(query, args...)
+
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+	var tokens []*Token
+	for rows.Next() {
+		var tempToken Token
+		err = rows.Scan(&tempToken.Hash, &tempToken.UserID, &tempToken.ExpiresAt, &tempToken.Scope)
+		if err != nil {
+			return nil, err
+		}
+		tokens = append(tokens, &tempToken)
+	}
+
+	err = rows.Err()
+	if err != nil {
+		return nil, err
+	}
+	return tokens, nil
+}
+
+func (m TokenModel) DeleteAllForUser(scope string, userID int64) error {
+	query := `
+		DELETE FROM tokens
+		WHERE scope = $1 AND user_id = $2`
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, err := m.DB.ExecContext(ctx, query, scope, userID)
+	return err
 }

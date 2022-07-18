@@ -2,6 +2,7 @@ package data
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"time"
@@ -84,7 +85,7 @@ type UserModel struct {
 func (m UserModel) Insert(user *User) error {
 	query := `
 			INSERT INTO users (login, password_hash, role, status, name)
-			VALUES ($1,$2)
+			VALUES ($1,$2,$3,$4,$5)
 			RETURNING id, created_at`
 	args := []interface{}{user.Login, user.Password.hash, user.Role, user.Status, user.Name}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -111,6 +112,67 @@ func (m UserModel) GetByLogin(email string) (*User, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	err := m.DB.QueryRowContext(ctx, query, email).Scan(
+		&user.ID,
+		&user.CreatedAt,
+		&user.Login,
+		&user.Password.hash,
+		&user.Name,
+		&user.Status,
+		&user.Role,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return nil, ErrRecordNotFound
+		default:
+			return nil, err
+		}
+	}
+	return &user, nil
+}
+func (m UserModel) GetByID(ID int64) (*User, error) {
+	query := `
+		SELECT id, created_at, login, password_hash, name,status, role
+		FROM users
+		WHERE id = $1`
+	var user User
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	err := m.DB.QueryRowContext(ctx, query, ID).Scan(
+		&user.ID,
+		&user.CreatedAt,
+		&user.Login,
+		&user.Password.hash,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return nil, ErrRecordNotFound
+		default:
+			return nil, err
+		}
+	}
+	return &user, nil
+}
+
+func (m UserModel) GetForToken(tokenScope, tokenPlaintext string) (*User, error) {
+
+	tokenHash := sha256.Sum256([]byte(tokenPlaintext))
+
+	query := `
+		SELECT users.id, users.created_at, users.email, users.password_hash
+		FROM users
+		INNER JOIN tokens
+		ON users.id = tokens.user_id
+		WHERE tokens.hash = $1
+		AND tokens.scope = $2
+		AND tokens.expiry > $3`
+
+	args := []interface{}{tokenHash[:], tokenScope, time.Now()}
+	var user User
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	err := m.DB.QueryRowContext(ctx, query, args...).Scan(
 		&user.ID,
 		&user.CreatedAt,
 		&user.Login,
