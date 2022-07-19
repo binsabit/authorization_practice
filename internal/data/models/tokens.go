@@ -33,7 +33,7 @@ type Token struct {
 
 type AuthToken struct {
 	AccessToken  string `json:"access-token"`
-	RefreshToken Token
+	RefreshToken Token  `json:"refresh-token"`
 }
 
 func genereteToken(userID int64, scope string, ttl time.Duration) (*Token, error) {
