@@ -32,6 +32,11 @@ func (app *application) RefreshSession(w http.ResponseWriter, r *http.Request) {
 	if user.IsAnonymous() {
 		helpers.MethodNotAllowedResponse(w, r)
 	}
+	err := app.models.Tokens.DeleteAllForUser(data.TypeRefresh, user.ID)
+	if err != nil {
+		helpers.ServerErrorResponse(w, r, err)
+		return
+	}
 	token, err := app.models.Tokens.NewAuthToken(*user, time.Minute*15, time.Hour*24*7)
 	if err != nil {
 		helpers.ServerErrorResponse(w, r, err)

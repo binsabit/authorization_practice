@@ -142,7 +142,9 @@ func (m TokenModel) SetExposed(user *User) error {
 func (m TokenModel) GetAllForUser(user *User) ([]*Token, error) {
 	query := `SELECT hash, user_login, expiry, scope
 			FROM tokens
-			WHERE user_id = $1 AND expiry > $2`
+			WHERE user_id = $1 
+			AND expiry > $2
+			AND is_exposed = false`
 
 	args := []interface{}{user.ID, time.Now()}
 
