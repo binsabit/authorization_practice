@@ -19,6 +19,31 @@ func (app *application) Index(w http.ResponseWriter, r *http.Request) {
 	fmt.Println(user)
 }
 
+func (app *application) Logout(w http.ResponseWriter, r *http.Request) {
+	user := app.contextGetUser(r)
+	if user.IsAnonymous() {
+		helpers.MethodNotAllowedResponse(w, r)
+	}
+
+}
+
+func (app *application) RefreshSession(w http.ResponseWriter, r *http.Request) {
+	user := app.contextGetUser(r)
+	if user.IsAnonymous() {
+		helpers.MethodNotAllowedResponse(w, r)
+	}
+	token, err := app.models.Tokens.NewAuthToken(*user, time.Minute*15, time.Hour*24*7)
+	if err != nil {
+		helpers.ServerErrorResponse(w, r, err)
+		return
+	}
+
+	err = helpers.WriteJSON(w, http.StatusCreated, helpers.Envelope{"authentication": token}, nil)
+	if err != nil {
+		helpers.ServerErrorResponse(w, r, err)
+	}
+}
+
 func (app *application) RegisterUser(w http.ResponseWriter, r *http.Request) {
 	app.logger.Println("Registering user")
 
@@ -117,14 +142,34 @@ func (app *application) LoginUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accesssToken, err := app.models.Tokens.NewToken(*user, data.TypeAccess, time.Minute*15)
+	err = app.models.Tokens.DeleteAllForUser(data.TypeRefresh, user.ID)
 	if err != nil {
 		helpers.ServerErrorResponse(w, r, err)
 		return
 	}
 
-	err = helpers.WriteJSON(w, http.StatusCreated, helpers.Envelope{"authentication": accesssToken}, nil)
+	token, err := app.models.Tokens.NewAuthToken(*user, time.Minute*15, time.Hour*24*7)
+	if err != nil {
+		helpers.ServerErrorResponse(w, r, err)
+		return
+	}
+
+	err = helpers.WriteJSON(w, http.StatusCreated, helpers.Envelope{"authentication": token}, nil)
 	if err != nil {
 		helpers.ServerErrorResponse(w, r, err)
 	}
+}
+
+func (app *application) LogoutUser(w http.ResponseWriter, r *http.Request) {
+	user := app.contextGetUser(r)
+	if user.IsAnonymous() {
+		helpers.MethodNotAllowedResponse(w, r)
+	}
+	err := app.models.Tokens.DeleteAllForUser(data.TypeRefresh, user.ID)
+	if err != nil {
+		helpers.ServerErrorResponse(w, r, err)
+		return
+	}
+	helpers.WriteJSON(w, http.StatusOK, helpers.Envelope{"message": "user logged out"}, nil)
+
 }

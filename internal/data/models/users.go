@@ -103,7 +103,7 @@ func (m UserModel) Insert(user *User) error {
 	return nil
 }
 
-func (m UserModel) GetByLogin(email string) (*User, error) {
+func (m UserModel) GetByLogin(login string) (*User, error) {
 	query := `
 		SELECT id, created_at, login, password_hash, name,status, role
 		FROM users
@@ -111,7 +111,7 @@ func (m UserModel) GetByLogin(email string) (*User, error) {
 	var user User
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	err := m.DB.QueryRowContext(ctx, query, email).Scan(
+	err := m.DB.QueryRowContext(ctx, query, login).Scan(
 		&user.ID,
 		&user.CreatedAt,
 		&user.Login,
@@ -143,6 +143,9 @@ func (m UserModel) GetByID(ID int64) (*User, error) {
 		&user.CreatedAt,
 		&user.Login,
 		&user.Password.hash,
+		&user.Name,
+		&user.Status,
+		&user.Role,
 	)
 	if err != nil {
 		switch {
@@ -160,7 +163,7 @@ func (m UserModel) GetForToken(tokenScope, tokenPlaintext string) (*User, error)
 	tokenHash := sha256.Sum256([]byte(tokenPlaintext))
 
 	query := `
-		SELECT users.id, users.created_at, users.email, users.password_hash
+		SELECT users.id, users.created_at, users.login, users.password_hash
 		FROM users
 		INNER JOIN tokens
 		ON users.id = tokens.user_id

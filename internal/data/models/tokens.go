@@ -2,8 +2,10 @@ package data
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base32"
 	"time"
 
 	"github.com/binsabit/authorization_practice/internal/data/validator"
@@ -26,14 +28,44 @@ type Token struct {
 	Scope     string    `json:"scope"`
 	ExpiresAt time.Time `json:"expires_at"`
 	UserID    int64     `json:"."`
+	IsExposed bool      `json:"."`
 }
 
-func generateToken(userID int64, ttd time.Duration, scope, role string) (*Token, error) {
+type AuthToken struct {
+	AccessToken  string `json:"access-token"`
+	RefreshToken Token
+}
+
+func genereteToken(userID int64, scope string, ttl time.Duration) (*Token, error) {
 	token := &Token{
 		UserID:    userID,
-		ExpiresAt: time.Now().Add(ttd),
+		ExpiresAt: time.Now().Add(ttl),
 		Scope:     scope,
 	}
+
+	randomBytes := make([]byte, 32)
+	_, err := rand.Read(randomBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	token.Plaintext = base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(randomBytes)
+
+	hash := sha256.Sum256([]byte(token.Plaintext))
+	token.Hash = hash[:]
+
+	return token, nil
+}
+
+func ValidateTokenPlaintext(v *validator.Validator, tokenPlaintext string) {
+	v.Check(tokenPlaintext != "", "token", "must be provided")
+}
+
+type TokenModel struct {
+	DB *sql.DB
+}
+
+func (m TokenModel) generateJWTToken(userID int64, ttd time.Duration, scope, role string) (string, error) {
 
 	signKey := []byte(Secretkey)
 	t := jwt.New(jwt.SigningMethodHS256)
@@ -46,32 +78,42 @@ func generateToken(userID int64, ttd time.Duration, scope, role string) (*Token,
 
 	tokenString, err := t.SignedString(signKey)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
-	token.Plaintext = tokenString
-	hash := sha256.Sum256([]byte(token.Plaintext))
-	token.Hash = hash[:]
-
-	return token, nil
+	return tokenString, nil
 
 }
 
-func ValidateTokenPlaintext(v *validator.Validator, tokenPlaintext string) {
-	v.Check(tokenPlaintext != "", "token", "must be provided")
+func (m TokenModel) NewAuthToken(user User, ttlAccess, ttlRefresh time.Duration) (interface{}, error) {
+	accessToken, err := m.generateJWTToken(user.ID, ttlAccess, TypeAccess, user.Role)
+
+	if err != nil || accessToken == "" {
+		return "", err
+	}
+
+	refreshToken, err := m.NewToken(user, TypeRefresh, ttlRefresh)
+	if err != nil {
+		return "", err
+	}
+
+	return AuthToken{AccessToken: accessToken, RefreshToken: *refreshToken}, nil
+
 }
 
-type TokenModel struct {
-	DB *sql.DB
-}
+func (m TokenModel) NewToken(user User, scope string, ttl time.Duration) (*Token, error) {
 
-func (m TokenModel) NewToken(user User, scope string, ttd time.Duration) (*Token, error) {
-	accessToken, err := generateToken(user.ID, ttd, scope, user.Role)
+	token, err := genereteToken(user.ID, scope, ttl)
 	if err != nil {
 		return nil, err
 	}
 
-	return accessToken, nil
+	err = m.Insert(token)
+	if err != nil {
+		return nil, err
+	}
+
+	return token, nil
 }
 
 func (m TokenModel) Insert(token *Token) error {
@@ -83,6 +125,18 @@ func (m TokenModel) Insert(token *Token) error {
 	defer cancel()
 	_, err := m.DB.ExecContext(ctx, query, args...)
 	return err
+}
+
+func (m TokenModel) SetExposed(user *User) error {
+	query := `	UPDATE tokens 
+				SET is_exposed = true 
+				WHERE user_id = $1`
+
+	_, err := m.DB.Exec(query, user)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (m TokenModel) GetAllForUser(user *User) ([]*Token, error) {
